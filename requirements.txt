@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+streamlit
+langchain
+langgraph
+sqlalchemy
+pandas
+chromadb
+openai
