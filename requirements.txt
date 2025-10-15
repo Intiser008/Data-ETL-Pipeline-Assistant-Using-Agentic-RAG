@@ -1,5 +1,5 @@
-fastapi
-uvicorn
+fastapi[standard]
+uvicorn[standard]
 streamlit
 langchain
 langgraph
