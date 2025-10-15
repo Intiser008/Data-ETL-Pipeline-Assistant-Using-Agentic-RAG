@@ -1,0 +1,11 @@
+only keep necessary columns in the ETL csv files
+convert those into parquets
+
+From ChatGPT:
+Clean / transform into your prices-style CSV
+
+Columns you need: date, ticker, close_price, volume (you might include open, high, low optionally but your schema demands close + volume).
+
+Rename columns (e.g. “Close” → close_price, “Date” → date).
+
+Remove other unnecessary columns or keep them if you plan to extend your schema.
