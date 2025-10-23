@@ -22,7 +22,13 @@ CREATE TABLE prices (
   date DATE,
   ticker VARCHAR REFERENCES tickers(ticker),
   close_price NUMERIC(10,2),
-  volume INT
+  volume INT,
+  open_price NUMERIC(10,2),
+  high_price NUMERIC(10,2),
+  low_price NUMERIC(10,2),
+  adj_close NUMERIC(10,2),
+  return_1d NUMERIC(10,6),
+  volume_avg_5 NUMERIC(14,2)
 );
 
 CREATE TABLE trades (
@@ -31,7 +37,10 @@ CREATE TABLE trades (
   ticker VARCHAR REFERENCES tickers(ticker),
   qty INT,
   price NUMERIC(10,2),
-  trader_id INT REFERENCES traders(trader_id)
+  trader_id INT REFERENCES traders(trader_id),
+  notional NUMERIC(14,2),
+  is_buy BOOLEAN,
+  trade_cost NUMERIC(10,2)
 );
 
 CREATE TABLE positions (
@@ -40,7 +49,10 @@ CREATE TABLE positions (
   portfolio_id INT REFERENCES portfolios(portfolio_id),
   ticker VARCHAR REFERENCES tickers(ticker),
   quantity INT,
-  market_value NUMERIC(12,2)
+  market_value NUMERIC(12,2),
+  cost_basis NUMERIC(12,2),
+  unrealized_pnl NUMERIC(12,2),
+  weight NUMERIC(9,6)
 );
 
 CREATE TABLE pnl (
@@ -48,7 +60,8 @@ CREATE TABLE pnl (
   date DATE,
   trader_id INT REFERENCES traders(trader_id),
   realized_pnl NUMERIC(12,2),
-  unrealized_pnl NUMERIC(12,2)
+  unrealized_pnl NUMERIC(12,2),
+  total_pnl NUMERIC(12,2)
 );
 
 CREATE TABLE risk_metrics (
@@ -57,7 +70,10 @@ CREATE TABLE risk_metrics (
   portfolio_id INT REFERENCES portfolios(portfolio_id),
   var_95 NUMERIC(12,2),
   beta NUMERIC(6,3),
-  exposure NUMERIC(12,2)
+  exposure NUMERIC(12,2),
+  var_99 NUMERIC(12,2),
+  tracking_error NUMERIC(12,4),
+  sharpe_ratio NUMERIC(12,6)
 );
 
 INSERT INTO tickers VALUES ('AAPL','AAPL Inc','Tech');
