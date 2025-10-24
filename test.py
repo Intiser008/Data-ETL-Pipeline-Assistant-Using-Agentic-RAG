@@ -1,6 +1,6 @@
 import requests
 
-url = "https://rsyxpli63a.execute-api.us-east-1.amazonaws.com/default/openai-proxy"
+url = ""
 
 payload = {
     "prompt": "Explain Fitts' Law in 2 sentences."
