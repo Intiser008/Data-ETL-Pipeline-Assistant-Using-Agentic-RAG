@@ -1,0 +1,90 @@
+{
+  "tables": {
+    "patients": {
+      "columns": [
+        "id",
+        "birthdate",
+        "deathdate",
+        "ssn",
+        "drivers",
+        "passport",
+        "prefix",
+        "first",
+        "last",
+        "suffix",
+        "maiden",
+        "marital",
+        "race",
+        "ethnicity",
+        "gender",
+        "birthplace",
+        "address"
+      ],
+      "resource_types": ["Patient"]
+    },
+    "encounters": {
+      "columns": [
+        "id",
+        "date",
+        "patient",
+        "code",
+        "description",
+        "reasoncode",
+        "reasondescription"
+      ],
+      "resource_types": ["Encounter"]
+    },
+    "conditions": {
+      "columns": [
+        "start",
+        "stop",
+        "patient",
+        "encounter",
+        "code",
+        "description"
+      ],
+      "resource_types": ["Condition"]
+    },
+    "observations": {
+      "columns": [
+        "date",
+        "patient",
+        "encounter",
+        "code",
+        "description",
+        "value",
+        "units"
+      ],
+      "resource_types": ["Observation"]
+    },
+    "medications": {
+      "columns": [
+        "start",
+        "stop",
+        "patient",
+        "encounter",
+        "code",
+        "description",
+        "reasoncode",
+        "reasondescription"
+      ],
+      "resource_types": [
+        "MedicationRequest",
+        "MedicationOrder",
+        "MedicationPrescription"
+      ]
+    },
+    "procedures": {
+      "columns": [
+        "date",
+        "patient",
+        "encounter",
+        "code",
+        "description",
+        "reasoncode",
+        "reasondescription"
+      ],
+      "resource_types": ["Procedure"]
+    }
+  }
+}

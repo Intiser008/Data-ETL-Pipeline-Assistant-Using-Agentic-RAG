@@ -27,14 +27,37 @@ SQL_KEYWORDS = {
     "table",
     "query",
     "select",
-    "price",
-    "volume",
-    "pnl",
-    "risk",
 }
 
-ETL_KEYWORDS = {"load", "transform", "csv", "clean", "parquet", "pandas"}
-CHART_KEYWORDS = {"chart", "plot", "graph", "visualize", "visualise"}
+ETL_KEYWORDS = {
+    "load",
+    "ingest",
+    "transform",
+    "cleanup",
+    "clean",
+    "normalize",
+    "standardize",
+    "aggregate",
+    "group",
+    "groupby",
+    "summarize",
+    "enrich",
+    "csv",
+    "excel",
+    "xlsx",
+    "parquet",
+    "dataset",
+    "pandas",
+    "json",
+    "jsonl",
+    "s3",
+    "upload",
+    "pipeline",
+    "etl",
+    "stage",
+    "prepare",
+}
+CHART_KEYWORDS = {"chart", "plot", "graph", "visualize", "visualise", "visualization", "dashboard", "plotly"}
 
 
 def plan_intent(prompt: str) -> Plan:

@@ -1,0 +1,53 @@
+table_name,column_name,description
+patients,id,Unique patient identifier (UUID).
+patients,birthdate,Date of birth.
+patients,deathdate,Date of death when applicable.
+patients,ssn,Synthetic Social Security Number.
+patients,drivers,Driver license value when present.
+patients,passport,Passport identifier in the synthetic data.
+patients,prefix,Name prefix string.
+patients,first,Patient first name.
+patients,last,Patient last name.
+patients,suffix,Name suffix string.
+patients,maiden,Maiden name.
+patients,marital,Marital status label.
+patients,race,Recorded race value.
+patients,ethnicity,Recorded ethnicity value.
+patients,gender,Recorded gender value.
+patients,birthplace,Patient birthplace (city/state text).
+patients,address,Full mailing address string.
+encounters,id,Encounter identifier.
+encounters,date,Encounter date (single-day visit).
+encounters,patient,FK to patients.id.
+encounters,code,Encounter type code.
+encounters,description,Encounter type description.
+encounters,reasoncode,Reason for visit code (nullable).
+encounters,reasondescription,Reason for visit description (nullable).
+conditions,start,Condition start date.
+conditions,stop,Condition end date (nullable).
+conditions,patient,FK to patients.id.
+conditions,encounter,FK to encounters.id.
+conditions,code,Condition code (ICD/SNOMED).
+conditions,description,Condition description text.
+procedures,date,Procedure date.
+procedures,patient,FK to patients.id.
+procedures,encounter,FK to encounters.id.
+procedures,code,Procedure code (CPT/SNOMED).
+procedures,description,Procedure description.
+procedures,reasoncode,Procedure reason code (nullable).
+procedures,reasondescription,Procedure reason description (nullable).
+medications,start,Medication start date.
+medications,stop,Medication end date.
+medications,patient,FK to patients.id.
+medications,encounter,FK to encounters.id.
+medications,code,Medication code (RxNorm).
+medications,description,Medication description.
+medications,reasoncode,Medication reason code (nullable).
+medications,reasondescription,Medication reason description (nullable).
+observations,date,Observation date.
+observations,patient,FK to patients.id.
+observations,encounter,FK to encounters.id.
+observations,code,Observation code (LOINC/SNOMED).
+observations,description,Observation description.
+observations,value,Recorded value stored as text.
+observations,units,Units accompanying the recorded value.

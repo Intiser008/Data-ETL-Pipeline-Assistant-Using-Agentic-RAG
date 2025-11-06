@@ -8,3 +8,10 @@ pandas
 chromadb
 openai
 httpx
+python-dotenv
+psycopg[binary]
+langchain-text-splitters
+sqlglot
+boto3
+pytest
+redis

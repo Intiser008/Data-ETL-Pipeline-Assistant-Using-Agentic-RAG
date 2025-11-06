@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import re
+
 import httpx
 
 from app.core.config import get_settings
@@ -14,24 +17,59 @@ class LLMError(RuntimeError):
     """Raised when the language model interaction fails."""
 
 
+def _strip_code_fence(text: str) -> str:
+    """Remove common Markdown code fences from LLM responses."""
+    pattern = re.compile(r"^```(?:\w+)?\s*(.*?)\s*```$", re.DOTALL)
+    match = pattern.match(text.strip())
+    if match:
+        return match.group(1).strip()
+    return text
+
+
 def _extract_content(payload: object) -> str:
     """Best-effort extraction of generated text from the proxy response."""
     if isinstance(payload, str):
-        return payload
+        return _strip_code_fence(payload)
     if isinstance(payload, dict):
-        if "content" in payload and isinstance(payload["content"], str):
-            return payload["content"]
-        if "response" in payload and isinstance(payload["response"], str):
-            return payload["response"]
-        if "choices" in payload and payload["choices"]:
-            choice = payload["choices"][0]
+        # Unwrap common proxy envelope formats
+        body = payload.get("body")
+        if isinstance(body, str):
+            try:
+                payload = json.loads(body)
+            except json.JSONDecodeError:
+                return _strip_code_fence(body)
+        elif isinstance(body, dict):
+            payload = body
+
+        reply = payload.get("reply")
+        if isinstance(reply, str):
+            return _strip_code_fence(reply)
+
+        sql = payload.get("sql")
+        if isinstance(sql, str):
+            return _strip_code_fence(sql)
+
+        content = payload.get("content")
+        if isinstance(content, str):
+            return _strip_code_fence(content)
+
+        response = payload.get("response")
+        if isinstance(response, str):
+            return _strip_code_fence(response)
+
+        choices = payload.get("choices")
+        if choices:
+            choice = choices[0]
             if isinstance(choice, dict):
                 message = choice.get("message")
-                if isinstance(message, dict) and isinstance(message.get("content"), str):
-                    return message["content"]
-                if isinstance(choice.get("text"), str):
-                    return choice["text"]
-    raise LLMError("Unexpected response format from LLM proxy.")
+                if isinstance(message, dict):
+                    message_content = message.get("content")
+                    if isinstance(message_content, str):
+                        return _strip_code_fence(message_content)
+                choice_text = choice.get("text")
+                if isinstance(choice_text, str):
+                    return _strip_code_fence(choice_text)
+    raise LLMError(f"Unexpected response format from LLM proxy: {payload!r}")
 
 
 class LambdaLLMClient:

@@ -1,0 +1,310 @@
+natural_language,sql_query
+"List all patients with their birthdate, gender, and mailing address.","SELECT id,
+       first || ' ' || last AS full_name,
+       birthdate,
+       gender,
+       address
+FROM healthcare_demo.patients
+ORDER BY last, first
+LIMIT 100;"
+Show all encounters for patient <patient_uuid> including the encounter description and patient name.,"SELECT e.id,
+       e.date,
+       e.code,
+       e.description,
+       p.first || ' ' || p.last AS patient_name
+FROM healthcare_demo.encounters AS e
+JOIN healthcare_demo.patients AS p ON e.patient = p.id
+WHERE e.patient = '<patient_uuid>'
+ORDER BY e.date;"
+Count encounters per patient and include the patient's full name.,"SELECT p.id,
+       p.first || ' ' || p.last AS full_name,
+       COUNT(e.id) AS encounter_count
+FROM healthcare_demo.patients AS p
+LEFT JOIN healthcare_demo.encounters AS e ON p.id = e.patient
+GROUP BY p.id, p.first, p.last
+ORDER BY encounter_count DESC, full_name;"
+Show the ten most common condition descriptions.,"SELECT description,
+       COUNT(*) AS frequency
+FROM healthcare_demo.conditions
+GROUP BY description
+ORDER BY frequency DESC
+LIMIT 10;"
+List all conditions recorded for a patient named John Doe including the encounter date.,"SELECT c.description,
+       c.start AS condition_start,
+       e.date AS encounter_date
+FROM healthcare_demo.conditions AS c
+JOIN healthcare_demo.patients AS p ON c.patient = p.id
+LEFT JOIN healthcare_demo.encounters AS e ON c.encounter = e.id
+WHERE p.first = 'John'
+  AND p.last = 'Doe'
+ORDER BY c.start;"
+List medications prescribed during encounter <encounter_uuid> including patient name and prescription window.,"SELECT m.code,
+       m.description,
+       m.start,
+       m.stop,
+       p.first || ' ' || p.last AS patient_name
+FROM healthcare_demo.medications AS m
+JOIN healthcare_demo.patients AS p ON m.patient = p.id
+WHERE m.encounter = '<encounter_uuid>'
+ORDER BY m.start;"
+Find patients without any encounters.,"SELECT p.id,
+       p.first || ' ' || p.last AS full_name
+FROM healthcare_demo.patients AS p
+LEFT JOIN healthcare_demo.encounters AS e ON p.id = e.patient
+WHERE e.patient IS NULL
+ORDER BY full_name;"
+List all observations for patient <patient_uuid> with measurement units and encounter date.,"SELECT o.date,
+       o.description,
+       o.value,
+        o.units,
+       e.date AS encounter_date
+FROM healthcare_demo.observations AS o
+LEFT JOIN healthcare_demo.encounters AS e ON o.encounter = e.id
+WHERE o.patient = '<patient_uuid>'
+ORDER BY o.date;"
+Compute the average numeric body weight per patient (kg).,"SELECT p.id,
+       p.first || ' ' || p.last AS full_name,
+       AVG(NULLIF(o.value, '')::numeric) AS avg_weight_kg
+FROM healthcare_demo.observations AS o
+JOIN healthcare_demo.patients AS p ON o.patient = p.id
+WHERE o.code = '29463-7'
+  AND o.description = 'Body Weight'
+  AND NULLIF(o.value, '') ~ '^[0-9]+(\.[0-9]+)?$'
+GROUP BY p.id, p.first, p.last
+ORDER BY avg_weight_kg DESC;"
+Return the most recent observation for each patient.,"SELECT DISTINCT ON (o.patient) o.patient,
+       p.first || ' ' || p.last AS full_name,
+       o.date,
+       o.description,
+       o.value,
+       o.units
+FROM healthcare_demo.observations AS o
+JOIN healthcare_demo.patients AS p ON o.patient = p.id
+ORDER BY o.patient, o.date DESC;"
+List encounters occurring after 2022-01-01 with patient name and encounter code.,"SELECT e.id,
+       e.date,
+       e.code,
+       e.description,
+       p.first || ' ' || p.last AS patient_name
+FROM healthcare_demo.encounters AS e
+JOIN healthcare_demo.patients AS p ON e.patient = p.id
+WHERE e.date >= DATE '2022-01-01'
+ORDER BY e.date;"
+Retrieve conditions tied to encounters with billing code 99213 including encounter date.,"SELECT c.description,
+       c.start AS condition_start,
+       e.date AS encounter_date
+FROM healthcare_demo.conditions AS c
+JOIN healthcare_demo.encounters AS e ON c.encounter = e.id
+WHERE e.code = '99213'
+ORDER BY c.start;"
+List patients diagnosed with both diabetes and hypertension.,"SELECT DISTINCT p.id,
+       p.first || ' ' || p.last AS full_name
+FROM healthcare_demo.patients AS p
+JOIN healthcare_demo.conditions AS c1 ON p.id = c1.patient
+JOIN healthcare_demo.conditions AS c2 ON p.id = c2.patient
+WHERE LOWER(c1.description) LIKE '%diabetes%'
+  AND LOWER(c2.description) LIKE '%hypertension%'
+ORDER BY full_name;"
+Identify medications overlapping with condition time spans for each patient.,"SELECT DISTINCT p.id,
+       p.first || ' ' || p.last AS full_name,
+       m.description AS medication,
+       c.description AS condition
+FROM healthcare_demo.patients AS p
+JOIN healthcare_demo.medications AS m ON p.id = m.patient
+JOIN healthcare_demo.conditions AS c ON p.id = c.patient
+WHERE m.start <= COALESCE(c.stop, m.start)
+  AND COALESCE(m.stop, CURRENT_DATE) >= c.start
+ORDER BY full_name, medication;"
+Find conditions active during 2023.,"SELECT *
+FROM healthcare_demo.conditions
+WHERE start <= DATE '2023-12-31'
+  AND (stop IS NULL OR stop >= DATE '2023-01-01');"
+List patients living in Massachusetts (address contains ' MA ').,"SELECT id,
+       first || ' ' || last AS full_name,
+       address
+FROM healthcare_demo.patients
+WHERE address ILIKE '% MA %'
+ORDER BY full_name;"
+Count distinct observation units used in the dataset.,"SELECT units,
+       COUNT(*) AS occurrences
+FROM healthcare_demo.observations
+WHERE units IS NOT NULL AND units <> ''
+GROUP BY units
+ORDER BY occurrences DESC;"
+Find patients with any observation value greater than 150.,"SELECT DISTINCT p.id,
+       p.first || ' ' || p.last AS full_name
+FROM healthcare_demo.patients AS p
+JOIN healthcare_demo.observations AS o ON p.id = o.patient
+WHERE NULLIF(o.value, '') ~ '^[0-9]+(\.[0-9]+)?$'
+  AND NULLIF(o.value, '')::numeric > 150
+ORDER BY full_name;"
+"Summarize all records for encounter <encounter_uuid> across conditions, medications, and procedures.","SELECT 'condition' AS record_type, description, start AS event_date
+FROM healthcare_demo.conditions
+WHERE encounter = '<encounter_uuid>'
+UNION ALL
+SELECT 'medication' AS record_type, description, start AS event_date
+FROM healthcare_demo.medications
+WHERE encounter = '<encounter_uuid>'
+UNION ALL
+SELECT 'procedure' AS record_type, description, date AS event_date
+FROM healthcare_demo.procedures
+WHERE encounter = '<encounter_uuid>'
+ORDER BY event_date;"
+Find patients with fewer than two encounters.,"SELECT p.id,
+       p.first || ' ' || p.last AS full_name,
+       COUNT(e.id) AS encounter_count
+FROM healthcare_demo.patients AS p
+LEFT JOIN healthcare_demo.encounters AS e ON p.id = e.patient
+GROUP BY p.id, p.first, p.last
+HAVING COUNT(e.id) < 2
+ORDER BY encounter_count, full_name;"
+Report the earliest and latest encounter dates in the system.,"SELECT MIN(date) AS earliest_encounter,
+       MAX(date) AS latest_encounter
+FROM healthcare_demo.encounters;"
+Count distinct observation descriptions per patient.,"SELECT o.patient,
+       p.first || ' ' || p.last AS full_name,
+       COUNT(DISTINCT o.description) AS total_types
+FROM healthcare_demo.observations AS o
+JOIN healthcare_demo.patients AS p ON o.patient = p.id
+GROUP BY o.patient, p.first, p.last
+ORDER BY total_types DESC;"
+List patients whose first name starts with 'A' along with total encounter count.,"SELECT p.id,
+       p.first,
+       p.last,
+       COUNT(e.id) AS encounter_count
+FROM healthcare_demo.patients AS p
+LEFT JOIN healthcare_demo.encounters AS e ON p.id = e.patient
+WHERE p.first ILIKE 'A%'
+GROUP BY p.id, p.first, p.last
+ORDER BY p.last, p.first;"
+Find encounters without linked conditions.,"SELECT e.id,
+       e.date,
+       e.code,
+       p.first || ' ' || p.last AS patient_name
+FROM healthcare_demo.encounters AS e
+JOIN healthcare_demo.patients AS p ON e.patient = p.id
+LEFT JOIN healthcare_demo.conditions AS c ON e.id = c.encounter
+WHERE c.encounter IS NULL
+ORDER BY e.date;"
+Show the five most common medication descriptions.,"SELECT description,
+       COUNT(*) AS total
+FROM healthcare_demo.medications
+GROUP BY description
+ORDER BY total DESC
+LIMIT 5;"
+List both conditions and medications for patient <patient_uuid> sorted by start date.,"SELECT 'condition' AS record_type,
+       description,
+       start
+FROM healthcare_demo.conditions
+WHERE patient = '<patient_uuid>'
+UNION ALL
+SELECT 'medication' AS record_type,
+       description,
+       start
+FROM healthcare_demo.medications
+WHERE patient = '<patient_uuid>'
+ORDER BY start;"
+Calculate average condition duration per patient in days.,"SELECT patient,
+       AVG(EXTRACT(DAY FROM (COALESCE(stop, CURRENT_DATE) - start))) AS avg_days
+FROM healthcare_demo.conditions
+GROUP BY patient
+ORDER BY avg_days DESC;"
+List observations recorded in the last 90 days.,"SELECT patient,
+       date,
+       description,
+       value,
+       units
+FROM healthcare_demo.observations
+WHERE date >= CURRENT_DATE - INTERVAL '90 days'
+ORDER BY date DESC;"
+Rank patients by number of encounters and return the top five.,"SELECT id,
+       full_name,
+       encounter_count
+FROM (
+  SELECT p.id,
+         p.first || ' ' || p.last AS full_name,
+         COUNT(e.id) AS encounter_count,
+         ROW_NUMBER() OVER (ORDER BY COUNT(e.id) DESC) AS rk
+  FROM healthcare_demo.patients AS p
+  LEFT JOIN healthcare_demo.encounters AS e ON p.id = e.patient
+  GROUP BY p.id, p.first, p.last
+) AS ranked
+WHERE rk <= 5
+ORDER BY rk;"
+Find patients whose encounter count exceeds the overall average.,"WITH encounter_totals AS (
+  SELECT patient,
+         COUNT(*) AS encounter_count
+  FROM healthcare_demo.encounters
+  GROUP BY patient
+), avg_cte AS (
+  SELECT AVG(encounter_count)::numeric AS avg_count
+  FROM encounter_totals
+)
+SELECT p.id,
+       p.first || ' ' || p.last AS full_name,
+       et.encounter_count
+FROM encounter_totals AS et
+JOIN healthcare_demo.patients AS p ON et.patient = p.id
+CROSS JOIN avg_cte
+WHERE et.encounter_count > avg_cte.avg_count
+ORDER BY et.encounter_count DESC;"
+Show total claim amounts per patient including zeros when data is missing.,"SELECT p.id,
+       p.first || ' ' || p.last AS full_name,
+       COALESCE(SUM(e.total_claim_cost), 0) AS total_claim_cost
+FROM healthcare_demo.patients AS p
+LEFT JOIN healthcare_demo.encounters AS e ON p.id = e.patient
+GROUP BY p.id, p.first, p.last
+ORDER BY total_claim_cost DESC;"
+List conditions along with any matching observation taken on the same encounter.,"SELECT c.patient,
+       c.description AS condition_description,
+       c.start,
+       o.description AS observation_description,
+       o.value
+FROM healthcare_demo.conditions AS c
+LEFT JOIN healthcare_demo.observations AS o ON c.encounter = o.encounter
+ORDER BY c.patient, c.start;"
+Show procedures along with reason code and description when available.,"SELECT pr.patient,
+       pr.description,
+       pr.date,
+       pr.reasoncode,
+       pr.reasondescription
+FROM healthcare_demo.procedures AS pr
+ORDER BY pr.date DESC
+LIMIT 50;"
+Return medications with missing stop dates (active prescriptions).,"SELECT patient,
+       description,
+       start
+FROM healthcare_demo.medications
+WHERE stop IS NULL
+ORDER BY start DESC;"
+List encounters with cumulative claim cost by patient using a window function.,"SELECT e.patient,
+       p.first || ' ' || p.last AS full_name,
+       e.date,
+       e.total_claim_cost,
+       SUM(COALESCE(e.total_claim_cost, 0)) OVER (PARTITION BY e.patient ORDER BY e.date) AS running_total
+FROM healthcare_demo.encounters AS e
+JOIN healthcare_demo.patients AS p ON e.patient = p.id
+ORDER BY e.patient, e.date;"
+Find patients who have both conditions and medications recorded on the same encounter.,"SELECT DISTINCT p.id,
+       p.first || ' ' || p.last AS full_name,
+       e.id AS encounter_id
+FROM healthcare_demo.patients AS p
+JOIN healthcare_demo.encounters AS e ON p.id = e.patient
+JOIN healthcare_demo.conditions AS c ON e.id = c.encounter
+JOIN healthcare_demo.medications AS m ON e.id = m.encounter
+ORDER BY full_name, encounter_id;"
+Show observation counts per encounter together with encounter description.,"SELECT e.id,
+       e.date,
+       e.description,
+       COUNT(o.id) AS observation_count
+FROM healthcare_demo.encounters AS e
+LEFT JOIN healthcare_demo.observations AS o ON e.id = o.encounter
+GROUP BY e.id, e.date, e.description
+ORDER BY observation_count DESC;"
+List patients whose most recent encounter was within the past year.,"SELECT DISTINCT ON (e.patient) e.patient,
+       p.first || ' ' || p.last AS full_name,
+       e.date AS last_encounter_date
+FROM healthcare_demo.encounters AS e
+JOIN healthcare_demo.patients AS p ON e.patient = p.id
+WHERE e.date >= CURRENT_DATE - INTERVAL '1 year'
+ORDER BY e.patient, e.date DESC;"

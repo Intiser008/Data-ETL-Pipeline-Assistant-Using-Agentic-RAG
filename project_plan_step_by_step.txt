@@ -42,16 +42,13 @@ TPC-H (SF 0.01)
 . Add 2–3 “business tables” (customers, orders, products) and 1–2 lookup tables.
 Tabular files
  (for ETL):
-A few 
-CSV/Excel/Parquet
- datasets from public sources (Kaggle small sets, NYC taxi sample, retail sales samples).
+FHIR bundles or other domain-specific raw files that mirror your analytics needs.
 Corpus for RAG
  (index in Chroma):
 Data dictionary & table schemas (auto-extract from Postgres → markdown).
 Business glossary (you write 30–60 entries).
 Few-shot NL↔SQL
  examples (10–20, tied to your schema).
-“How to” snippets for Pandas transforms (filter, groupby, join).
 Optional
 : if you want small “training”, fine-tune 
 embeddings
@@ -118,35 +115,24 @@ retry-policy
 , 
 tool-logging
 .
-4) Milestone C — ETL (CSV/Excel/Parquet) (Week 3)
+4) Milestone C — ETL Orchestration (Week 3)
 Goal
-: ETL path with Pandas.
+: End-to-end orchestration that turns raw healthcare bundles into curated warehouse tables.
 Work
-New tool: 
-pandas_runner
- for extract→transform (filter, groupby, join) → 
-export
-.
-S3 integration:
-s3://bucket/raw/
- for uploads
-s3://bucket/reports/
-, 
-s3://bucket/charts/
- for outputs
-Planner routes “etl” tasks; generator emits Pandas code (guardrails: safe ops only).
+JSON → CSV pipeline (FHIR bundles → six curated tables) invoked by the agent.
+Upload curated CSVs to S3 (`s3://bucket/healthcare-etl/processed/<table>/<timestamp>.csv`).
+Automated DB loader re-uses the curated CSVs to upsert/replace records in the warehouse via SQLAlchemy.
+Retry/error handling surfaced to the agent (ETL failure, S3 issue, DB load errors).
 Acceptance
-Given a CSV in S3, produce a grouped report CSV to 
-reports/
- with correct aggregations.
-Large file (>50MB) handled via chunked reads or skip with message.
+Agent request "Transform X" produces a CSV locally, uploads it to S3, and loads the target Postgres table (patients/encounters/…)
+Second attempt recovers from induced failures (bad JSON, denied S3, DB constraint) within retry budget.
 GitHub pushes
 : 
 etl-tool-v1
 , 
 s3-client
 , 
-exports-v1
+db-loader
 , 
 etl-tests
 .
@@ -154,20 +140,11 @@ etl-tests
 Goal
 : Tables + charts + downloadable CSV/Excel.
 Work
-Reporter module (matplotlib or Plotly).
-Streamlit UI: show table, chart, and 
-Download
- buttons (presigned S3 URLs).
-Add short NL explanation of result.
+[Deferred] – charting/reporting features to be scoped in a later phase.
 Acceptance
-For 5 analytics tasks, get chart+CSV and explanation that matches expected logic.
+Finalize after reporting work is reintroduced.
 GitHub pushes
-: 
-reporter-v1
-, 
-ui-results-view
-, 
-presigned-urls
+: (Deferred)
 .
 6) Milestone E — UX polish & UAT harness (Week 5)
 Goal

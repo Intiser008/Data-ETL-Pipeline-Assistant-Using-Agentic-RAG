@@ -23,7 +23,7 @@ def execute_query(query: str, params: dict[str, Any] | None = None) -> dict[str,
     rows = _result_to_dicts(result)
     return {
         "rows": rows,
-        "columns": result.keys(),
+        "columns": list(result.keys()),
         "sql": validation.query,
         "limit_enforced": validation.enforced_limit,
     }

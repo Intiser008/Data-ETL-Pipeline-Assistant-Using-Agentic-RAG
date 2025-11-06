@@ -1,0 +1,7 @@
+question,directive
+"Transform the latest patients JSON bundle into a CSV and push it to S3.","{\"table\": \"patients\"}"
+"Run the ETL pipeline that prepares encounters data.","{\"table\": \"encounters\"}"
+"Generate the medications export from the raw JSON bundles.","{\"table\": \"medications\"}"
+"Clean the observation records and stage them for analytics.","{\"table\": \"observations\"}"
+"Aggregate procedure activity by running the ETL pipeline for procedures.","{\"table\": \"procedures\"}"
+"Run the full healthcare ETL pipeline end-to-end.","{\"table\": \"all\"}"

@@ -14,6 +14,10 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 def _get_env(name: str, default: str | None = None, *, required: bool = False) -> str | None:
     """Fetch an environment variable with optional required flag."""
@@ -27,10 +31,15 @@ def _get_env(name: str, default: str | None = None, *, required: bool = False) -
 class AzureOpenAISettings:
     """Azure OpenAI configuration."""
 
-    endpoint: str
-    api_key: str
-    deployment_name: str
+    endpoint: str | None = None
+    api_key: str | None = None
+    deployment_name: str | None = None
     api_version: str = "2023-12-01-preview"
+
+    @property
+    def is_configured(self) -> bool:
+        """Return True when all required Azure values are present."""
+        return bool(self.endpoint and self.api_key and self.deployment_name)
 
 
 @dataclass(frozen=True)
@@ -47,8 +56,37 @@ class VectorStoreSettings:
     """Settings for the Chroma vector store used in retrieval."""
 
     persist_directory: str = ".dist/chroma"
-    collection_name: str = "finance_demo_docs"
+    collection_name: str = "healthcare_demo_docs"
     embedding_deployment: str | None = None
+    embedding_proxy_url: str | None = None
+
+
+@dataclass(frozen=True)
+class ETLSettings:
+    """Settings for the raw JSON -> CSV -> S3 ETL pipeline."""
+
+    raw_dir: str
+    processed_dir: str
+    schema_config_path: str | None = None
+    s3_bucket: str | None = None
+    s3_prefix: str = ""
+    aws_region: str | None = None
+    aws_access_key_id: str | None = None
+    aws_secret_access_key: str | None = None
+    aws_session_token: str | None = None
+    enable_s3: bool = True
+    max_records: int = 0
+    enable_db_load: bool = False
+    truncate_before_load: bool = False
+    db_chunksize: int = 1000
+
+
+@dataclass(frozen=True)
+class CacheSettings:
+    """Settings for the application cache (Redis)."""
+
+    redis_url: str | None = None
+    ttl_seconds: int = 3600
 
 
 @dataclass(frozen=True)
@@ -58,17 +96,20 @@ class Settings:
     azure_openai: AzureOpenAISettings
     database: DatabaseSettings
     vector_store: VectorStoreSettings
+    etl: ETLSettings
     llm_proxy_url: str
     default_result_limit: int = 1000
+    agent_max_retries: int = 3
+    cache: CacheSettings | None = None
 
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """Return cached application settings."""
     azure = AzureOpenAISettings(
-        endpoint=_get_env("AZURE_OPENAI_ENDPOINT", required=True),
-        api_key=_get_env("AZURE_OPENAI_API_KEY", required=True),
-        deployment_name=_get_env("AZURE_OPENAI_DEPLOYMENT_NAME", required=True),
+        endpoint=_get_env("AZURE_OPENAI_ENDPOINT"),
+        api_key=_get_env("AZURE_OPENAI_API_KEY"),
+        deployment_name=_get_env("AZURE_OPENAI_DEPLOYMENT_NAME"),
         api_version=_get_env("AZURE_OPENAI_API_VERSION", "2023-12-01-preview"),
     )
     db = DatabaseSettings(
@@ -78,14 +119,38 @@ def get_settings() -> Settings:
     )
     vs = VectorStoreSettings(
         persist_directory=_get_env("CHROMA_PERSIST_DIR", ".dist/chroma"),
-        collection_name=_get_env("CHROMA_COLLECTION", "finance_demo_docs"),
+        collection_name=_get_env("CHROMA_COLLECTION", "healthcare_demo_docs"),
         embedding_deployment=_get_env("CHROMA_EMBEDDING_DEPLOYMENT"),
+        embedding_proxy_url=_get_env("EMBEDDING_PROXY_URL"),
+    )
+    etl = ETLSettings(
+        raw_dir=_get_env("ETL_RAW_DIR", "data/raw"),
+        processed_dir=_get_env("ETL_PROCESSED_DIR", "data/processed/etl"),
+        schema_config_path=_get_env("ETL_SCHEMA_CONFIG"),
+        s3_bucket=_get_env("S3_BUCKET"),
+        s3_prefix=_get_env("S3_PREFIX", ""),
+        aws_region=_get_env("AWS_REGION"),
+        aws_access_key_id=_get_env("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=_get_env("AWS_SECRET_ACCESS_KEY"),
+        aws_session_token=_get_env("AWS_SESSION_TOKEN"),
+        enable_s3=_get_env("ETL_ENABLE_S3", "true").lower() not in {"false", "0", "no"},
+        max_records=int(_get_env("ETL_MAX_RECORDS", "0")),
+        enable_db_load=_get_env("ETL_ENABLE_DB_LOAD", "false").lower() in {"true", "1", "yes"},
+        truncate_before_load=_get_env("ETL_DB_TRUNCATE", "false").lower() in {"true", "1", "yes"},
+        db_chunksize=int(_get_env("ETL_DB_CHUNKSIZE", "1000")),
     )
     llm_proxy_url = _get_env("LLM_PROXY_URL", required=True)
+    cache = CacheSettings(
+        redis_url=_get_env("CACHE_REDIS_URL"),
+        ttl_seconds=int(_get_env("CACHE_TTL_SECONDS", "3600")),
+    )
     return Settings(
         azure_openai=azure,
         database=db,
         vector_store=vs,
+        etl=etl,
         llm_proxy_url=llm_proxy_url,
         default_result_limit=int(_get_env("DEFAULT_RESULT_LIMIT", "1000")),
+        agent_max_retries=int(_get_env("AGENT_MAX_RETRIES", "3")),
+        cache=cache,
     )
