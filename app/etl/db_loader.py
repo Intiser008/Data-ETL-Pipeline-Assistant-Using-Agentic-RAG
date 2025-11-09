@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Iterable
 
 import pandas as pd
-from sqlalchemy import text
+from sqlalchemy import MetaData, Table, text
 from sqlalchemy.engine.url import make_url
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -32,6 +32,7 @@ class LoadRequest:
     table: str
     csv_path: Path
     truncate_before_load: bool = False
+    mode: str = "insert"
 
 
 @dataclass(frozen=True)
@@ -79,7 +80,9 @@ def load_table_from_csv(
         except Exception:  # pragma: no cover - safeguard malformed URLs
             url = None
 
-        if url and url.get_backend_name().startswith("postgresql"):
+        backend_name = url.get_backend_name() if url else None
+
+        if backend_name and backend_name.startswith("postgresql"):
             from sqlalchemy.dialects.postgresql import UUID as PG_UUID  # type: ignore
 
             uuid_columns = TABLE_UUID_COLUMNS.get(request.table, [])
@@ -87,23 +90,88 @@ def load_table_from_csv(
                 dtype_map = {column: PG_UUID(as_uuid=True) for column in uuid_columns}
 
         with engine.begin() as connection:
-            if request.truncate_before_load:
+            load_mode = getattr(request, "mode", "insert").lower()
+
+            if request.truncate_before_load and load_mode == "insert":
                 logger.info("Truncating table %s before load", request.table)
                 connection.execute(text(f'TRUNCATE TABLE "{request.table}"'))
-            df.to_sql(
-                request.table,
-                connection,
-                if_exists="append",
-                index=False,
-                method="multi",
-                chunksize=chunksize,
-                dtype=dtype_map,
-            )
+            if load_mode == "upsert" and backend_name and backend_name.startswith("postgresql"):
+                inserted_rows = _execute_postgres_upsert(
+                    connection,
+                    table_name=request.table,
+                    dataframe=df,
+                    chunksize=chunksize,
+                )
+            elif load_mode == "upsert" and backend_name and backend_name.startswith("sqlite"):
+                inserted_rows = _execute_sqlite_upsert(
+                    connection,
+                    table_name=request.table,
+                    dataframe=df,
+                    chunksize=chunksize,
+                )
+            else:
+                if load_mode == "upsert" and not (backend_name and backend_name.startswith("postgresql")):
+                    logger.warning(
+                        "Upsert mode requested for backend '%s'; falling back to INSERT.",
+                        backend_name or "unknown",
+                    )
+                df.to_sql(
+                    request.table,
+                    connection,
+                    if_exists="append",
+                    index=False,
+                    method="multi",
+                    chunksize=chunksize,
+                    dtype=dtype_map,
+                )
     except SQLAlchemyError as exc:
         raise DBLoadError(f"Database load failed for table {request.table}: {exc}") from exc
 
     logger.info("Inserted %s rows into table %s", inserted_rows, request.table)
     return LoadResult(table=request.table, inserted_rows=inserted_rows, source_path=csv_path)
+
+
+def _execute_postgres_upsert(connection, *, table_name: str, dataframe: pd.DataFrame, chunksize: int) -> int:
+    from sqlalchemy.dialects.postgresql import insert as pg_insert  # type: ignore
+
+    metadata = MetaData()
+    table = Table(table_name, metadata, autoload_with=connection)
+    primary_keys = [column.name for column in table.primary_key.columns]
+    if not primary_keys:
+        raise DBLoadError(f"Table {table_name} has no primary key; cannot perform UPSERT.")
+
+    records = dataframe.to_dict(orient="records")
+    if not records:
+        return 0
+
+    chunk_size = chunksize or len(records)
+    for start in range(0, len(records), chunk_size):
+        chunk = records[start : start + chunk_size]
+        stmt = pg_insert(table).values(chunk)
+        stmt = stmt.on_conflict_do_nothing(index_elements=primary_keys)
+        connection.execute(stmt)
+
+    return len(records)
+
+
+def _execute_sqlite_upsert(connection, *, table_name: str, dataframe: pd.DataFrame, chunksize: int) -> int:
+    records = dataframe.to_dict(orient="records")
+    if not records:
+        return 0
+
+    columns = list(dataframe.columns)
+    column_list = ", ".join(columns)
+    placeholders = ", ".join(f":{column}" for column in columns)
+    statement = text(f"INSERT OR IGNORE INTO {table_name} ({column_list}) VALUES ({placeholders})")
+
+    chunk_size = chunksize or len(records)
+    for start in range(0, len(records), chunk_size):
+        chunk = records[start : start + chunk_size]
+        result = connection.execute(statement, chunk)
+        # SQLite may report the attempted rowcount even when the row was ignored
+        # due to a conflict, so we do not rely on ``rowcount`` here.
+
+    return len(records)
 
 
 def load_tables(

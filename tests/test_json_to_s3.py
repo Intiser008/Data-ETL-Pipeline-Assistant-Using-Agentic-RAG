@@ -17,6 +17,7 @@ from app.etl.json_to_s3 import (
     run_pipeline_all,
     transform,
     transform_all,
+    _apply_column_mapping,
 )
 
 
@@ -263,3 +264,20 @@ def test_custom_schema_config_is_honoured(tmp_path):
     df = transform([sample_path], "patients", catalog=catalog)
 
     assert set(df.columns) == {"id", "birthdate", "first", "last"}
+
+
+def test_apply_column_mapping_reorders_and_renames():
+    df = pd.DataFrame(
+        [
+            {"PatientID": "1", "FirstName": "Alice", "LastName": "Smith", "extra": "ignored"}
+        ]
+    )
+    mapping = {"id": "PatientID", "first": "FirstName", "last": "LastName"}
+
+    result = _apply_column_mapping(df, mapping, ["id", "first", "last"])
+
+    assert list(result.columns) == ["id", "first", "last"]
+    row = result.iloc[0]
+    assert row["id"] == "1"
+    assert row["first"] == "Alice"
+    assert row["last"] == "Smith"

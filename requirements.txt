@@ -6,6 +6,7 @@ langgraph
 sqlalchemy
 pandas
 chromadb
+requests
 openai
 httpx
 python-dotenv
@@ -15,3 +16,5 @@ sqlglot
 boto3
 pytest
 redis
+plotly
+xlsxwriter

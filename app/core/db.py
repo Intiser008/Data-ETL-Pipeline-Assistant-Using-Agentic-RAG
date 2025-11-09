@@ -35,7 +35,15 @@ def get_engine() -> Engine:
 def run_select(query: str, params: dict[str, Any] | None = None) -> Result:
     """Execute a read-only SQL query and return a SQLAlchemy ``Result``."""
     engine = get_engine()
+    settings = get_settings()
+    timeout_ms = getattr(settings.database, "statement_timeout_ms", None)
     with engine.connect() as connection:
+        if timeout_ms:
+            dialect = connection.dialect.name
+            if dialect.startswith("postgresql"):
+                connection.execute(text(f"SET LOCAL statement_timeout = {int(timeout_ms)}"))
+            elif dialect.startswith("sqlite"):
+                connection.connection.execute(f"PRAGMA busy_timeout = {int(timeout_ms)}")
         return connection.execute(text(query), params or {})
 
 

@@ -49,6 +49,7 @@ class DatabaseSettings:
     url: str
     pool_size: int = 5
     max_overflow: int = 5
+    statement_timeout_ms: int | None = None
 
 
 @dataclass(frozen=True)
@@ -79,6 +80,8 @@ class ETLSettings:
     enable_db_load: bool = False
     truncate_before_load: bool = False
     db_chunksize: int = 1000
+    source_pattern: str = "*.json"
+    manifest_path: str | None = None
 
 
 @dataclass(frozen=True)
@@ -98,6 +101,7 @@ class Settings:
     vector_store: VectorStoreSettings
     etl: ETLSettings
     llm_proxy_url: str
+    llm_timeout_seconds: float = 30.0
     default_result_limit: int = 1000
     agent_max_retries: int = 3
     cache: CacheSettings | None = None
@@ -116,6 +120,7 @@ def get_settings() -> Settings:
         url=_get_env("DATABASE_URL", required=True),
         pool_size=int(_get_env("DATABASE_POOL_SIZE", "5")),
         max_overflow=int(_get_env("DATABASE_MAX_OVERFLOW", "5")),
+        statement_timeout_ms=int(_get_env("DATABASE_STATEMENT_TIMEOUT_MS", "0")) or None,
     )
     vs = VectorStoreSettings(
         persist_directory=_get_env("CHROMA_PERSIST_DIR", ".dist/chroma"),
@@ -138,6 +143,8 @@ def get_settings() -> Settings:
         enable_db_load=_get_env("ETL_ENABLE_DB_LOAD", "false").lower() in {"true", "1", "yes"},
         truncate_before_load=_get_env("ETL_DB_TRUNCATE", "false").lower() in {"true", "1", "yes"},
         db_chunksize=int(_get_env("ETL_DB_CHUNKSIZE", "1000")),
+        source_pattern=_get_env("ETL_SOURCE_PATTERN", "*.json"),
+        manifest_path=_get_env("ETL_MANIFEST_PATH"),
     )
     llm_proxy_url = _get_env("LLM_PROXY_URL", required=True)
     cache = CacheSettings(
@@ -150,6 +157,7 @@ def get_settings() -> Settings:
         vector_store=vs,
         etl=etl,
         llm_proxy_url=llm_proxy_url,
+        llm_timeout_seconds=float(_get_env("LLM_TIMEOUT_SECONDS", "30")),
         default_result_limit=int(_get_env("DEFAULT_RESULT_LIMIT", "1000")),
         agent_max_retries=int(_get_env("AGENT_MAX_RETRIES", "3")),
         cache=cache,

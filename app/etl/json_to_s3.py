@@ -5,13 +5,14 @@ import json
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence
+from typing import Dict, Iterable, List, Mapping, Sequence
 
 import pandas as pd
 
 from app.core.config import ETLSettings, get_settings
 from app.core.logging import get_logger
 from app.etl.connectors import LocalFileConnector, S3Connector, StorageError
+from app.etl.manifest import ETLManifest, resolve_etl_settings
 from app.etl.schema_catalog import SchemaCatalog, load_catalog
 from app.etl.schema_utils import normalize_date_columns
 
@@ -43,9 +44,10 @@ def extract(settings: ETLSettings) -> List[Path]:
     if not raw_dir.exists():
         raise ETLError(f"Raw directory not found: {raw_dir}")
 
-    file_paths = sorted(path for path in raw_dir.glob("*.json") if path.is_file())
+    pattern = settings.source_pattern or "*.json"
+    file_paths = sorted(path for path in raw_dir.glob(pattern) if path.is_file())
     if not file_paths:
-        raise ETLError(f"No JSON bundles found under {raw_dir}")
+        raise ETLError(f"No JSON bundles found under {raw_dir} matching pattern '{pattern}'")
 
     logger.info("Discovered %s raw JSON files", len(file_paths))
     return file_paths
@@ -57,6 +59,7 @@ def transform(
     *,
     max_records: int = 0,
     catalog: SchemaCatalog | None = None,
+    column_mapping: Mapping[str, str] | None = None,
 ) -> pd.DataFrame:
     """Convert the JSON bundles into a dataframe matching the requested table schema."""
 
@@ -74,6 +77,8 @@ def transform(
         raise ETLError(f"No records produced for table '{definition.name}'.")
 
     logger.info("Transform produced %s rows for table '%s'", len(df), definition.name)
+    if column_mapping:
+        df = _apply_column_mapping(df, column_mapping, catalog.get_columns(definition.name))
     return df
 
 
@@ -83,6 +88,7 @@ def transform_all(
     max_records: int = 0,
     catalog: SchemaCatalog | None = None,
     require_all_tables: bool = True,
+    column_mappings: Mapping[str, Mapping[str, str]] | None = None,
 ) -> Dict[str, pd.DataFrame]:
     """Transform JSON bundles into dataframes for every supported table."""
 
@@ -123,6 +129,10 @@ def transform_all(
         df = normalize_date_columns(df, table_name)
         if max_records and len(df) > max_records:
             df = df.head(max_records).copy()
+        if column_mappings:
+            mapping = column_mappings.get(table_name)
+            if mapping:
+                df = _apply_column_mapping(df, mapping, catalog.get_columns(table_name))
         datasets[table_name] = df
 
     if missing and require_all_tables:
@@ -132,6 +142,41 @@ def transform_all(
         )
 
     return datasets
+
+
+def _apply_column_mapping(
+    df: pd.DataFrame,
+    mapping: Mapping[str, str],
+    target_columns: Sequence[str],
+) -> pd.DataFrame:
+    if not mapping:
+        return df
+
+    working = df.copy()
+    rename_map: Dict[str, str] = {}
+    for target_column, source_column in mapping.items():
+        if source_column is None or target_column == source_column:
+            continue
+        source_column_normalised = str(source_column).strip()
+        if not source_column_normalised:
+            continue
+        if source_column_normalised in working.columns:
+            rename_map[source_column_normalised] = target_column
+        else:
+            logger.debug(
+                "Schema mapping skipped: source column '%s' not present for target '%s'",
+                source_column_normalised,
+                target_column,
+            )
+
+    if rename_map:
+        working.rename(columns=rename_map, inplace=True)
+
+    for column in target_columns:
+        if column not in working.columns:
+            working[column] = None
+
+    return working.reindex(columns=target_columns)
 
 
 def load(df: pd.DataFrame, table: str, settings: ETLSettings) -> Dict[str, str | int | None]:
@@ -165,7 +210,13 @@ def load(df: pd.DataFrame, table: str, settings: ETLSettings) -> Dict[str, str |
     }
 
 
-def run_pipeline(table: str, settings: ETLSettings) -> Dict[str, str | int | None]:
+def run_pipeline(
+    table: str,
+    settings: ETLSettings,
+    *,
+    manifest: ETLManifest | None = None,
+    column_mappings: Mapping[str, Mapping[str, str]] | None = None,
+) -> Dict[str, str | int | None]:
     """High-level helper to execute the raw JSON ? CSV ? S3 pipeline."""
 
     file_paths = extract(settings)
@@ -175,11 +226,17 @@ def run_pipeline(table: str, settings: ETLSettings) -> Dict[str, str | int | Non
         table=table,
         max_records=settings.max_records,
         catalog=catalog,
+        column_mapping=(column_mappings or {}).get(table),
     )
     return load(df, table=table, settings=settings)
 
 
-def run_pipeline_all(settings: ETLSettings) -> Dict[str, Dict[str, str | int | None]]:
+def run_pipeline_all(
+    settings: ETLSettings,
+    *,
+    manifest: ETLManifest | None = None,
+    column_mappings: Mapping[str, Mapping[str, str]] | None = None,
+) -> Dict[str, Dict[str, str | int | None]]:
     """Execute the pipeline for every supported table in one pass."""
 
     file_paths = extract(settings)
@@ -189,6 +246,7 @@ def run_pipeline_all(settings: ETLSettings) -> Dict[str, Dict[str, str | int | N
         max_records=settings.max_records,
         catalog=catalog,
         require_all_tables=True,
+        column_mappings=column_mappings,
     )
 
     results: Dict[str, Dict[str, str | int | None]] = {}
@@ -382,16 +440,18 @@ def _apply_cli_overrides(settings: ETLSettings, args: argparse.Namespace) -> ETL
 
 def main(argv: Sequence[str] | None = None) -> None:
     args = _parse_args(argv)
-    settings = _apply_cli_overrides(get_settings().etl, args)
+    base_settings = get_settings().etl
+    resolved_settings, manifest = resolve_etl_settings(base_settings)
+    settings = _apply_cli_overrides(resolved_settings, args)
 
     if args.all:
-        results = run_pipeline_all(settings)
+        results = run_pipeline_all(settings, manifest=manifest)
         for table, metadata in results.items():
             logger.info("Pipeline emitted %s rows to %s", metadata["row_count"], metadata["local_path"])
         return
 
     if args.table:
-        result = run_pipeline(args.table, settings)
+        result = run_pipeline(args.table, settings, manifest=manifest)
         logger.info("Pipeline emitted %s rows to %s", result["row_count"], result["local_path"])
         return
 

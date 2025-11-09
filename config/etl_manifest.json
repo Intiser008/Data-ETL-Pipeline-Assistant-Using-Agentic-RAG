@@ -1,0 +1,26 @@
+{
+  "source": {
+    "type": "local",
+    "path": "data/raw",
+    "pattern": "*.json"
+  },
+  "transform": {
+    "schema_config": "config/etl_schema.json",
+    "max_records": 0,
+    "auto_mapping": false,
+    "source_columns": {}
+  },
+  "target": {
+    "type": "local",
+    "processed_dir": "data/processed/etl",
+    "s3_bucket": null,
+    "s3_prefix": "",
+    "enable_s3": "inherit",
+    "enable_db_load": "inherit",
+    "truncate_before_load": false,
+    "db_chunksize": 1000,
+    "table_prefix": "curated_",
+    "on_conflict": "auto"
+  }
+}
+

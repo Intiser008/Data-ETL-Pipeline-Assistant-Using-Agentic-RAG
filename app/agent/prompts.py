@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Sequence
+from typing import Mapping, Sequence
 
 
 def build_sql_prompt(
@@ -84,4 +84,43 @@ def build_etl_prompt(
         f"Context Documentation:\n{context}\n\n"
         f"User Request:\n{user_prompt.strip()}\n\n"
         "Return ONLY the JSON object (no explanatory text)."
+    )
+
+
+def build_schema_mapping_prompt(
+    *,
+    table_name: str,
+    source_columns: Sequence[str],
+    target_columns: Sequence[str],
+    manifest_transform: Mapping[str, object] | None = None,
+) -> str:
+    """Prompt the LLM to map source columns to the target table schema."""
+
+    source_list = "\n".join(f"- {column}" for column in source_columns)
+    target_list = "\n".join(f"- {column}" for column in target_columns)
+
+    extras = ""
+    if manifest_transform:
+        hints = []
+        if isinstance(manifest_transform, Mapping):
+            for key, value in manifest_transform.items():
+                if key in {"auto_mapping", "schema_config", "max_records"}:
+                    continue
+                hints.append(f"{key}: {value}")
+        if hints:
+            extras = "\nManifest hints:\n" + "\n".join(f"- {hint}" for hint in hints)
+
+    instructions = (
+        "You are an ETL planner. Map the available source columns to the destination schema. "
+        "For each target column, pick the best matching source column. "
+        "If you cannot find a match, reuse the target column name so downstream validation can fill it manually. "
+        "Return JSON with the shape {\"columns\": {\"target_column\": \"source_column\"}} and nothing else."
+    )
+
+    return (
+        f"{instructions}\n\n"
+        f"Target table: {table_name}\n"
+        f"Target columns:\n{target_list}\n\n"
+        f"Source columns:\n{source_list}{extras}\n\n"
+        "JSON only; no markdown fences."
     )

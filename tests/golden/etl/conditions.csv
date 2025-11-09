@@ -1,0 +1,3 @@
+start,stop,patient,encounter,code,description
+2023-09-01,2023-09-01,pat-001,enc-001,E11.9,Type 2 diabetes mellitus
+

@@ -1,0 +1,3 @@
+date,patient,encounter,code,description,reasoncode,reasondescription
+2023-09-03,pat-001,enc-001,80146002,Routine blood test,,
+

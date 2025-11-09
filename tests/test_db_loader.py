@@ -24,7 +24,7 @@ def test_load_table_from_csv_inserts_rows(tmp_path, monkeypatch):
     with engine.begin() as conn:
         conn.execute(text("CREATE TABLE patients (id TEXT, name TEXT)"))
 
-    monkeypatch.setattr("app.core.db.get_engine", lambda: engine)
+    monkeypatch.setattr("app.etl.db_loader.get_engine", lambda: engine)
 
     result = load_table_from_csv(
         LoadRequest(table="patients", csv_path=csv_path),
@@ -39,9 +39,36 @@ def test_load_table_from_csv_inserts_rows(tmp_path, monkeypatch):
 
 def test_load_table_from_csv_missing_file(tmp_path, monkeypatch):
     engine = create_engine("sqlite://")
-    monkeypatch.setattr("app.core.db.get_engine", lambda: engine)
+    monkeypatch.setattr("app.etl.db_loader.get_engine", lambda: engine)
     with pytest.raises(DBLoadError):
         load_table_from_csv(
             LoadRequest(table="patients", csv_path=tmp_path / "missing.csv"),
             database=DatabaseSettings(url="sqlite://"),
         )
+
+
+def test_load_table_from_csv_upsert_falls_back_on_sqlite(tmp_path, monkeypatch):
+    csv_path = tmp_path / "patients.csv"
+    df = pd.DataFrame([{"id": "1", "name": "Alice"}])
+    df.to_csv(csv_path, index=False)
+
+    engine = create_engine("sqlite://")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE patients (id TEXT PRIMARY KEY, name TEXT)"))
+
+    monkeypatch.setattr("app.etl.db_loader.get_engine", lambda: engine)
+
+    # First load should insert the row
+    load_table_from_csv(
+        LoadRequest(table="patients", csv_path=csv_path, mode="insert"),
+        database=DatabaseSettings(url="sqlite://"),
+    )
+
+    # Second load with UPSERT mode should not error even though the row exists
+    result = load_table_from_csv(
+        LoadRequest(table="patients", csv_path=csv_path, mode="upsert"),
+        database=DatabaseSettings(url="sqlite://"),
+    )
+
+    assert result.inserted_rows == 1
+

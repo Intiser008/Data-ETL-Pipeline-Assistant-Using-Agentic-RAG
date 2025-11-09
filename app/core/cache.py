@@ -46,6 +46,16 @@ def get_json(key: str) -> Any | None:
     return json.loads(value) if value else None
 
 
+def get_json_list(key: str) -> list[Any]:
+    """Retrieve a list stored as JSON; return empty list when missing."""
+    payload = get_json(key)
+    if isinstance(payload, list):
+        return payload
+    if payload is None:
+        return []
+    return [payload]
+
+
 def set_json(key: str, payload: Any, ttl: int | None = None) -> None:
     """Store JSON payload in cache with optional TTL."""
     if not _redis_client:
@@ -59,6 +69,15 @@ def set_json(key: str, payload: Any, ttl: int | None = None) -> None:
             _redis_client.set(key, data)
     except Exception as exc:  # pragma: no cover
         logger.warning("Redis set failed for key %s: %s", key, exc)
+
+
+def append_json_list(key: str, item: Any, *, ttl: int | None = None, max_items: int | None = None) -> None:
+    """Append an item to a JSON list stored at key."""
+    current = get_json_list(key)
+    current.append(item)
+    if max_items and len(current) > max_items:
+        current = current[-max_items:]
+    set_json(key, current, ttl=ttl)
 
 
 def delete(key: str) -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Sequence
 
 from sqlalchemy.engine import Result
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.agent.guardrails import SqlValidationResult, validate_sql
 from app.core.config import get_settings
@@ -19,7 +20,13 @@ def execute_query(query: str, params: dict[str, Any] | None = None) -> dict[str,
     limit = get_settings().default_result_limit
     validation: SqlValidationResult = validate_sql(query, limit=limit)
     logger.info("Executing SQL query (limit_enforced=%s)", validation.enforced_limit)
-    result = run_select(validation.query, params)
+    try:
+        result = run_select(validation.query, params)
+    except SQLAlchemyError as exc:
+        message = str(exc)
+        if "timeout" in message.lower():
+            raise SQLAlchemyError("Database timeout exceeded.") from exc
+        raise
     rows = _result_to_dicts(result)
     return {
         "rows": rows,

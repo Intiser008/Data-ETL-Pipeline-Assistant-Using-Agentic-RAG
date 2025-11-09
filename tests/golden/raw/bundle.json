@@ -1,0 +1,102 @@
+{
+  "entry": [
+    {
+      "resource": {
+        "resourceType": "Patient",
+        "id": "pat-001",
+        "birthDate": "1980-01-01",
+        "gender": "female",
+        "name": [
+          {
+            "given": ["Alice"],
+            "family": "Smith"
+          }
+        ],
+        "address": [
+          {
+            "line": ["123 Main St"],
+            "city": "Boston",
+            "state": "MA",
+            "postalCode": "02110",
+            "country": "USA"
+          }
+        ],
+        "extension": []
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "enc-001",
+        "period": {"start": "2023-09-01"},
+        "subject": {"reference": "Patient/pat-001"},
+        "type": [
+          {
+            "coding": [{"code": "170258001"}],
+            "text": "Outpatient encounter"
+          }
+        ]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Condition",
+        "onsetDateTime": "2023-09-01",
+        "assertedDate": "2023-09-01",
+        "subject": {"reference": "Patient/pat-001"},
+        "encounter": {"reference": "Encounter/enc-001"},
+        "code": {
+          "coding": [{"code": "E11.9"}],
+          "text": "Type 2 diabetes mellitus"
+        }
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Observation",
+        "effectiveDateTime": "2023-09-01",
+        "subject": {"reference": "Patient/pat-001"},
+        "encounter": {"reference": "Encounter/enc-001"},
+        "code": {
+          "coding": [{"code": "8302-2"}],
+          "text": "Body height"
+        },
+        "valueQuantity": {
+          "value": 170,
+          "unit": "cm"
+        }
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "authoredOn": "2023-09-02",
+        "subject": {"reference": "Patient/pat-001"},
+        "encounter": {"reference": "Encounter/enc-001"},
+        "medicationCodeableConcept": {
+          "coding": [{"code": "123456"}],
+          "text": "Metformin 500mg"
+        },
+        "reasonCode": [
+          {
+            "coding": [{"code": "E11.9"}],
+            "text": "Type 2 diabetes mellitus"
+          }
+        ]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Procedure",
+        "performedDateTime": "2023-09-03",
+        "subject": {"reference": "Patient/pat-001"},
+        "encounter": {"reference": "Encounter/enc-001"},
+        "code": {
+          "coding": [{"code": "80146002"}],
+          "text": "Routine blood test"
+        }
+      }
+    }
+  ]
+}
+

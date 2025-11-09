@@ -85,6 +85,18 @@ _TABLE_COLUMN_MAP: dict[str, set[str]] = {
 }
 _ALLOWED_COLUMN_NAMES: Set[str] = {col for cols in _TABLE_COLUMN_MAP.values() for col in cols}
 
+_PROMPT_PROHIBITED_KEYWORDS = {
+    "drop",
+    "delete",
+    "truncate",
+    "alter",
+    "update",
+    "insert",
+    "create",
+    "grant",
+    "revoke",
+}
+
 
 class GuardrailViolation(Exception):
     """Raised when generated SQL violates safety policies."""
@@ -167,6 +179,16 @@ def validate_sql(query: str, *, limit: int) -> SqlValidationResult:
     ensure_read_only(query)
     ensure_known_columns(query)
     return enforce_limit(query, limit)
+
+
+def ensure_safe_prompt(prompt: str) -> None:
+    """Basic prompt-level guardrail to stop direct DDL/DML instructions."""
+    lowered = prompt.lower()
+    if any(keyword in lowered for keyword in _PROMPT_PROHIBITED_KEYWORDS):
+        raise GuardrailViolation(
+            "Detected potentially destructive instruction in the prompt. "
+            "Only read-only analytics requests are permitted."
+        )
 
 
 def ensure_required_literals(query: str, literals: Iterable[str]) -> None:

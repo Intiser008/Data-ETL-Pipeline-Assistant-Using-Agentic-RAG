@@ -6,7 +6,7 @@ milestones
 Build Plan — Agentic RAG Data ETL/Analytics Assistant
 0) Repo + Project Scaffolding (Day 1–2)
 Tech
-: Python 3.11, FastAPI, Streamlit, LangGraph/LangChain, SQLAlchemy, Pandas, ChromaDB, Azure OpenAI (Chat Completions), Docker.
+: Python 3.11, FastAPI, Streamlit, LangGraph/LangChain, SQLAlchemy, Pandas, ChromaDB, OpenAI Chat Completions (via AWS Lambda Proxy as OpenAI not supported in Hong Kong), Docker.
 Repo layout
 /app
   /api           # FastAPI (routes, schemas)
@@ -52,7 +52,7 @@ Few-shot NL↔SQL
 Optional
 : if you want small “training”, fine-tune 
 embeddings
- decision (but still use Azure text-embedding model; no LLM fine-tune required).
+ decision (but still use OpenAI text-embedding model via AWS Lambda proxy; no LLM fine-tune required).
 GitHub pushes
 : 
 sample-db-seed
@@ -72,7 +72,7 @@ Work
 Planner (simple classifier) → “query” path.
 Retriever: build Chroma index from schema/glossary/examples.
 Generator: prompt template (schema-aware, guardrails), call 
-Azure Chat Completions
+OpenAI Chat Completions
 .
 Executor: SQLAlchemy to Postgres (read-only user), enforce 
 LIMIT
@@ -210,7 +210,7 @@ secrets-wiring
 , 
 metrics-logging
 .
-9) Cloud Deployment (AWS + Azure OpenAI) (Week 4–5)
+9) Cloud Deployment (AWS + OpenAI) (Week 4–5)
 Minimal, credit-friendly topology
 ECS Fargate
  service (one task) running your Docker image (FastAPI + Streamlit + Chroma).
@@ -228,7 +228,7 @@ charts/
 .
 ALB
  (or API Gateway + Fargate) in front.
-Azure OpenAI
+OpenAI (via Lambda proxy)
 : keep external; store endpoint+key in Secrets Manager.
 IaC (optional)
 : Terraform in 

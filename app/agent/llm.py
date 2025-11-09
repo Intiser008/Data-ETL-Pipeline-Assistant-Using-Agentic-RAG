@@ -78,7 +78,8 @@ class LambdaLLMClient:
     def __init__(self) -> None:
         settings = get_settings()
         self._url = settings.llm_proxy_url
-        self._client = httpx.Client(timeout=30.0)
+        self._timeout = settings.llm_timeout_seconds
+        self._client = httpx.Client(timeout=self._timeout)
 
     def generate(self, prompt: str) -> str:
         """Send prompt to the proxy and return generated SQL."""
@@ -89,6 +90,8 @@ class LambdaLLMClient:
                 headers={"Content-Type": "application/json"},
             )
             response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise LLMError(f"LLM proxy request timed out after {self._timeout} seconds") from exc
         except httpx.HTTPError as exc:  # pragma: no cover - passthrough network errors
             raise LLMError(f"LLM proxy request failed: {exc}") from exc
 

@@ -1,0 +1,3 @@
+id,birthdate,deathdate,ssn,drivers,passport,prefix,first,last,suffix,maiden,marital,race,ethnicity,gender,birthplace,address
+pat-001,1980-01-01,,,,,,Alice,Smith,,,,,,female,,123 Main St Boston MA 02110 USA
+
