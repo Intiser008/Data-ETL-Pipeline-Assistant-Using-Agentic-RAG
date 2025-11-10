@@ -7,10 +7,11 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, Sequence
 import uuid
 import time
 import logging
+import re
 
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -39,8 +40,35 @@ from app.etl.manifest import ETLManifest, resolve_etl_settings
 from app.etl.schema_catalog import SchemaCatalog
 from app.core.cache import delete as cache_delete
 from app.core.cache import get_client, get_json, set_json
+from app.agent.sql_intent import same_intent
 
 logger = get_logger(__name__)
+
+_PREVIEW_LEN = 160
+
+
+def _preview(text: str | None, n: int = _PREVIEW_LEN) -> str:
+    if not text:
+        return ""
+    return (text or "").replace("\n", " ")[:n]
+
+
+def _context_preview(chunks: Sequence[str], limit: int = 3) -> list[str]:
+    out: list[str] = []
+    for i, ch in enumerate(chunks[:limit]):
+        first = (ch.splitlines() or [""])[0][:_PREVIEW_LEN]
+        out.append(f"[{i + 1}] {first}")
+    return out
+
+
+def _where_preview(sql: str, n: int = 220) -> str | None:
+    try:
+        match = re.search(r"\bwhere\b(.+)", sql, flags=re.I | re.S)
+        if match:
+            return _preview(match.group(1), n)
+    except Exception:
+        return None
+    return None
 
 
 @dataclass
@@ -54,6 +82,8 @@ class SQLAgentResponse:
     repaired: bool = False
     errors: list[str] = field(default_factory=list)
     context: list[str] = field(default_factory=list)
+    no_results_stable: bool | None = None
+    stability_attempts: int | None = None
 
 
 @dataclass
@@ -114,6 +144,7 @@ class AgentService:
             logging.INFO,
             "agent_handle_query_start",
             prompt_length=len(prompt),
+            prompt_preview=_preview(prompt),
             history_turns=len(history),
         )
 
@@ -196,6 +227,18 @@ class AgentService:
     ) -> SQLAgentResponse:
         settings = get_settings()
         try:
+            # Early prompt-level guard: unknown table names mentioned by the user
+            from app.agent.guardrails import ensure_prompt_tables_known as _ensure_prompt_tables_known
+            try:
+                _ensure_prompt_tables_known(prompt)
+            except GuardrailViolation as exc:
+                log_structured(
+                    logger,
+                    logging.WARNING,
+                    "prompt_unknown_table",
+                    error=str(exc),
+                )
+                raise
             context = self._retriever.retrieve(prompt)
         except RetrievalError as exc:
             log_structured(
@@ -211,6 +254,7 @@ class AgentService:
             logging.INFO,
             "sql_retrieval",
             context_chunks=len(context),
+            context_preview=_context_preview(context),
             history_turns=len(history),
         )
 
@@ -219,10 +263,29 @@ class AgentService:
         last_sql: str | None = None
         required_literals = _extract_required_literals(prompt)
         augmented_prompt = _augment_prompt_with_history(prompt, history)
+        attempt_sqls: list[str] = []
+        # Build domain/vocabulary guidance for the LLM (configurable)
+        guidance: str | None = None
+        try:
+            if getattr(settings, "vocabulary_guidance_enabled", True):
+                extra = (getattr(settings, "vocabulary_guidance_extra", None) or "").strip()
+                base_guidance = (
+                    "- Use these vocabularies:\n"
+                    "  • Conditions: SNOMED, ICD9CM. Prefer description matching when code families differ across datasets; avoid assuming ICD-10 usage.\n"
+                    "  • Observations: LOINC (e.g., '8480-6' systolic BP, '29463-7' body weight). For numeric comparisons, use NULLIF(value,'')::numeric with a numeric regex guard.\n"
+                    "  • Medications: RxNorm (NDC optional fallback).\n"
+                    "  • Procedures: CPT4 / HCPCS (ICD9Proc optional).\n"
+                    "- Joins/key usage: join on patient id (table.patient = patients.id); when appropriate, tighten link via encounter (observations.encounter = conditions.encounter).\n"
+                    "- Time windows: prefer explicit windows (e.g., BETWEEN condition.start - INTERVAL '14 days' AND COALESCE(condition.stop, condition.start) + INTERVAL '14 days').\n"
+                    "- Enforce read-only SQL; do not invent tables/columns.\n"
+                )
+                guidance = (base_guidance + ("\n" + extra if extra else "")).strip()
+        except Exception:
+            guidance = None
 
         for attempt in range(1, self._max_retries + 1):
             if attempt == 1 or last_sql is None or not error_messages:
-                sql_prompt = build_sql_prompt(augmented_prompt, context, limit=limit)
+                sql_prompt = build_sql_prompt(augmented_prompt, context, limit=limit, guidance=guidance)
             else:
                 sql_prompt = build_sql_repair_prompt(
                     user_prompt=augmented_prompt,
@@ -230,6 +293,7 @@ class AgentService:
                     previous_sql=last_sql,
                     error_summary=error_messages[-1],
                     limit=limit,
+                    guidance=guidance,
                 )
 
             log_structured(
@@ -244,6 +308,15 @@ class AgentService:
                 sql = self._llm.generate(sql_prompt)
                 if required_literals:
                     ensure_required_literals(sql, required_literals)
+                # log generated SQL (preview by default)
+                log_structured(
+                    logger,
+                    logging.INFO,
+                    "sql_generated",
+                    attempt=attempt,
+                    repair=attempt > 1,
+                    sql_preview=sql if getattr(settings, "log_sql_text", False) else _preview(sql, 400),
+                )
             except (LLMError, GuardrailViolation) as exc:
                 summary = summarize_exception(exc)
                 error_messages.append(summary.message)
@@ -264,7 +337,72 @@ class AgentService:
                 continue
 
             try:
+                attempt_sqls.append(sql)
                 result = execute_query(sql)
+                # Stable-empty handling: treat repeated semantically-equivalent empty results as success
+                if not result["rows"]:
+                    # Count how many previous attempts were semantically equivalent
+                    matches = 1
+                    settings = get_settings()
+                    # Compare with all previous attempts for semantic equivalence
+                    for prev_sql in attempt_sqls[:-1]:
+                        try:
+                            if same_intent(sql, prev_sql):
+                                matches += 1
+                        except Exception:
+                            continue
+                    # Optional LLM judge for semantic sameness if configured
+                    if (
+                        matches < getattr(settings, "empty_result_min_attempts", 2)
+                        and getattr(settings, "sql_semantic_compare_via_llm", False)
+                        and len(attempt_sqls) >= 2
+                    ):
+                        judge_prompt = (
+                            "Answer YES or NO: Are these two SQL queries semantically equivalent (same intent) "
+                            "ignoring literal values and LIMIT clauses?\n\n[SQL A]\n"
+                            f"{attempt_sqls[-2]}\n\n[SQL B]\n{sql}\n\nAnswer:"
+                        )
+                        try:
+                            verdict = self._llm.generate(judge_prompt).strip().upper()
+                            if verdict.startswith("YES"):
+                                matches = max(matches, getattr(settings, "empty_result_min_attempts", 2))
+                        except Exception:
+                            pass
+                    log_structured(
+                        logger,
+                        logging.INFO,
+                        "sql_no_results_attempt",
+                        attempt=attempt,
+                        intent_stable_matches=matches,
+                        min_required=getattr(settings, "empty_result_min_attempts", 2),
+                        where_preview=_where_preview(sql),
+                    )
+                    if (
+                        getattr(settings, "empty_result_stability_enabled", True)
+                        and matches >= getattr(settings, "empty_result_min_attempts", 2)
+                        and attempt >= getattr(settings, "empty_result_min_attempts", 2)
+                    ):
+                        log_structured(
+                            logger,
+                            logging.INFO,
+                            "sql_no_results_stable",
+                            attempts=matches,
+                            where_preview=_where_preview(sql),
+                        )
+                        return SQLAgentResponse(
+                            sql=result["sql"],
+                            rows=[],
+                            columns=result["columns"],
+                            intent=Intent.SQL,
+                            limit_enforced=result["limit_enforced"],
+                            attempts=attempt,
+                            repaired=attempt > 1,
+                            errors=list(error_messages),
+                            context=list(context),
+                            no_results_stable=True,
+                            stability_attempts=matches,
+                        )
+                # Enforce non-empty otherwise
                 validate_result(result["rows"])
                 log_structured(
                     logger,
@@ -273,6 +411,7 @@ class AgentService:
                     attempt=attempt,
                     row_count=len(result["rows"]),
                     column_count=len(result["columns"]),
+                    sql_preview=result["sql"] if getattr(settings, "log_sql_text", False) else _preview(result["sql"], 400),
                 )
                 return SQLAgentResponse(
                     sql=result["sql"],
@@ -289,12 +428,22 @@ class AgentService:
                 summary = summarize_exception(exc)
                 error_messages.append(summary.message)
                 last_sql = sql
+                # Try to classify common guardrail cases for better diagnostics
+                violation = None
+                msg_lower = summary.message.lower()
+                if "unknown column" in msg_lower:
+                    violation = "unknown_column"
+                elif "only select" in msg_lower:
+                    violation = "read_only"
+                elif "prohibited" in msg_lower:
+                    violation = "prohibited_keyword"
                 log_structured(
                     logger,
                     logging.WARNING,
                     "sql_execution_error",
                     attempt=attempt,
                     error=summary.message,
+                    violation=violation,
                 )
                 if attempt == self._max_retries:
                     raise AgentExecutionError(

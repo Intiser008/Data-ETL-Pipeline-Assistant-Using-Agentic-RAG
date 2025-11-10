@@ -90,6 +90,8 @@ class SQLQueryResponse(BaseModel):
     context: List[str]
     session_id: str
     history: List[Dict[str, Any]] = Field(default_factory=list)
+    no_results_stable: Optional[bool] | None = None
+    stability_attempts: Optional[int] | None = None
 
 
 class ETLTableResponse(BaseModel):
@@ -120,6 +122,14 @@ async def query(request: QueryRequest) -> QueryResponse:
     session_id = request.session_id or str(uuid4())
     session_token = set_session_id(session_id)
     try:
+        # Log prompt preview at API boundary
+        log_structured(
+            logger,
+            logging.INFO,
+            "query_received",
+            prompt_preview=(request.prompt[:160] if request.prompt else ""),
+            session_id=session_id,
+        )
         response, session_id, history = service.handle_query(request.prompt, session_id=session_id)
     except GuardrailViolation as exc:
         log_structured(logger, logging.WARNING, "guardrail_violation", error=str(exc))
@@ -155,6 +165,8 @@ async def query(request: QueryRequest) -> QueryResponse:
             context=response.context,
             session_id=session_id,
             history=history,
+            no_results_stable=response.no_results_stable,
+            stability_attempts=response.stability_attempts,
         )
 
     if isinstance(response, ETLAgentResponse):

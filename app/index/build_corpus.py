@@ -174,7 +174,11 @@ def _csv_to_text(path: Path) -> str:
             sections.append(
                 f"Question #{idx}: {question}\nSQL:\n{sql}"
             )
-        return f"Few-shot examples sourced from {path.name}\n\n" + "\n\n---\n\n".join(sections)
+        caution = (
+            "Examples (use only if explicitly relevant to the current question). "
+            "Do not introduce entities/codes/conditions that are not mentioned by the user.\n"
+        )
+        return f"Few-shot examples sourced from {path.name}\n\n{caution}\n" + "\n\n---\n\n".join(sections)
 
     # Fallback: serialize each row as key-value pairs
     serialized_rows = []

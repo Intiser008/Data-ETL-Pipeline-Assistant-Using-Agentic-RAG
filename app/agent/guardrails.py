@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from typing import Iterable, Set
+from typing import Iterable, Set, List
 
 from sqlglot import exp, parse_one
 
@@ -84,6 +84,7 @@ _TABLE_COLUMN_MAP: dict[str, set[str]] = {
     },
 }
 _ALLOWED_COLUMN_NAMES: Set[str] = {col for cols in _TABLE_COLUMN_MAP.values() for col in cols}
+_ALLOWED_TABLE_NAMES: Set[str] = set(_TABLE_COLUMN_MAP.keys())
 
 _PROMPT_PROHIBITED_KEYWORDS = {
     "drop",
@@ -132,6 +133,32 @@ def ensure_known_columns(query: str) -> None:
         _validate_column_reference(column, alias_names)
 
 
+def ensure_known_tables(query: str) -> None:
+    """Ensure the query references only documented base tables."""
+    try:
+        tree = parse_one(query, read="postgres")
+    except Exception as exc:  # pragma: no cover - parser failures bubble up
+        logger.warning("Skipping table validation for unparsable SQL: %s", exc)
+        return
+
+    unknown: List[str] = []
+    for table in tree.find_all(exp.Table):
+        name = getattr(table, "name", None)
+        if not name:
+            continue
+        normalized = str(name).strip('"').lower()
+        # schema-qualified names like healthcare_demo.patients -> 'patients'
+        if "." in normalized:
+            normalized = normalized.split(".")[-1]
+        if normalized not in _ALLOWED_TABLE_NAMES:
+            unknown.append(str(name))
+    if unknown:
+        raise GuardrailViolation(
+            f"Unknown table(s): {', '.join(sorted(unknown))}. "
+            f"Use only documented tables: {', '.join(sorted(_ALLOWED_TABLE_NAMES))}."
+        )
+
+
 def _collect_aliases(select: exp.Select | None) -> Set[str]:
     if select is None:
         return set()
@@ -177,6 +204,7 @@ def enforce_limit(query: str, limit: int) -> SqlValidationResult:
 def validate_sql(query: str, *, limit: int) -> SqlValidationResult:
     """Validate and normalise SQL query for execution."""
     ensure_read_only(query)
+    ensure_known_tables(query)
     ensure_known_columns(query)
     return enforce_limit(query, limit)
 
@@ -188,6 +216,43 @@ def ensure_safe_prompt(prompt: str) -> None:
         raise GuardrailViolation(
             "Detected potentially destructive instruction in the prompt. "
             "Only read-only analytics requests are permitted."
+        )
+
+
+def allowed_table_names() -> Set[str]:
+    """Return the set of allowed base table names."""
+    return set(_ALLOWED_TABLE_NAMES)
+
+
+def ensure_prompt_tables_known(prompt: str) -> None:
+    """Best-effort scan of the prompt for table names like 'from <name>' or 'join <name>'.
+    If any are not in the allowed table set, raise a violation early with a helpful message.
+    """
+    lowered = prompt.lower()
+    candidates: Set[str] = set()
+    # naive extraction after keywords
+    for kw in (" from ", " join ", " table "):
+        idx = 0
+        while True:
+            idx = lowered.find(kw, idx)
+            if idx == -1:
+                break
+            start = idx + len(kw)
+            end = start
+            while end < len(lowered) and (lowered[end].isalnum() or lowered[end] in {"_", ".", '"'}):
+                end += 1
+            token = lowered[start:end].strip().strip('"')
+            if token:
+                # schema-qualified -> take last part
+                if "." in token:
+                    token = token.split(".")[-1]
+                candidates.add(token)
+            idx = end
+    unknown = [t for t in candidates if t and t not in _ALLOWED_TABLE_NAMES]
+    if unknown:
+        raise GuardrailViolation(
+            f"Detected unknown table name(s) in the request: {', '.join(sorted(unknown))}. "
+            f"Valid tables: {', '.join(sorted(_ALLOWED_TABLE_NAMES))}."
         )
 
 

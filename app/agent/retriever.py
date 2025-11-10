@@ -24,6 +24,8 @@ class ChromaRetriever:
 
     def __init__(self) -> None:
         settings = get_settings()
+        self._top_k = getattr(settings, "retrieval_top_k", 4)
+        self._bias_schema_docs = getattr(settings, "retrieval_bias_schema_docs", True)
         vector_store = settings.vector_store
         logger.info("Connecting to ChromaDB at %s", vector_store.persist_directory)
         self._client = chromadb.PersistentClient(path=vector_store.persist_directory)
@@ -75,12 +77,37 @@ class ChromaRetriever:
 
     def retrieve(self, query: str, *, top_k: int = 4) -> List[str]:
         """Return relevant context chunks for the provided query."""
+        k = top_k or self._top_k
+        # Fetch extra to allow re-ranking by source
+        fetch_k = max(k * 2, 8) if self._bias_schema_docs else k
         results = self._collection.query(
             query_texts=[query],
-            n_results=top_k,
+            n_results=fetch_k,
         )
         documents = results.get("documents")
+        metadatas = results.get("metadatas")
         if not documents or not documents[0]:
             raise RetrievalError("No documents retrieved from vector store.")
-        return documents[0]
+        docs = documents[0]
+        metas = metadatas[0] if metadatas and metadatas[0] else [{} for _ in docs]
+        if not self._bias_schema_docs:
+            return docs[:k]
+
+        # Prefer schema docs and core schema references over examples
+        scored: list[tuple[int, str]] = []
+        for idx, (doc, meta) in enumerate(zip(docs, metas)):
+            source = str((meta or {}).get("source", "")).lower()
+            # Higher score => earlier in list
+            score = 0
+            if "schema_docs" in source or "/schema_docs/" in source:
+                score += 10
+            if source.endswith("etl_schema_config.md") or source.endswith("etl_overview.md"):
+                score += 6
+            if "nl_sql_examples" in source or "fewshot" in source or "examples" in source:
+                score -= 5
+            if "etl_fewshots" in source:
+                score -= 5
+            scored.append((score, doc))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [doc for _, doc in scored[:k]]
 

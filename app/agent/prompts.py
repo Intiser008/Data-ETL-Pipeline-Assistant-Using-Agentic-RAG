@@ -10,6 +10,7 @@ def build_sql_prompt(
     context_chunks: Sequence[str],
     *,
     limit: int,
+    guidance: str | None = None,
 ) -> str:
     """Render a single prompt string for the SQL generation proxy."""
     context = "\n\n".join(f"[Context #{idx + 1}]\n{chunk}" for idx, chunk in enumerate(context_chunks))
@@ -18,9 +19,13 @@ def build_sql_prompt(
         "Write a single read-only SQL query (SELECT or CTE) that answers the question below using the provided context. "
         "Use only the tables and columns documented, prefer schema-qualified names such as healthcare_demo.table_name when in doubt, "
         "and do not fabricate columns or tables. "
+        "Important: Use only entities (tables, codes, conditions, measures) explicitly mentioned in the current question; "
+        "do not introduce unrelated conditions/codes or extra joins that are not required. "
         f"Rules: no DML/DDL; no table creation; list explicit column names; include LIMIT {limit} or a smaller value; "
         "do not add commentary—return only the SQL."
     )
+    if guidance:
+        instructions += f"\n\nDomain/Vocabulary Guidance:\n{guidance.strip()}"
     return (
         f"{instructions}\n\n"
         f"Context Documentation:\n{context}\n\n"
@@ -36,6 +41,7 @@ def build_sql_repair_prompt(
     error_summary: str,
     *,
     limit: int,
+    guidance: str | None = None,
 ) -> str:
     """Prompt variant guiding the LLM to repair a failing SQL query."""
     context = "\n\n".join(f"[Context #{idx + 1}]\n{chunk}" for idx, chunk in enumerate(context_chunks))
@@ -43,9 +49,13 @@ def build_sql_repair_prompt(
         "You previously generated a SQL query that failed during execution. "
         "Using the same documentation, produce a corrected SQL query that fixes the issue described below. "
         "Stick strictly to documented healthcare_demo tables and columns; do not invent new fields. "
+        "Important: Drop any joins/filters that are unrelated to the user’s question; "
+        "avoid introducing diseases/codes/metrics not mentioned in the question. "
         f"Rules: write a single read-only SQL statement (SELECT or CTE); avoid DML/DDL; include LIMIT {limit} or a smaller value; "
         "ensure column names exactly match the schema; return only the SQL."
     )
+    if guidance:
+        instructions += f"\n\nDomain/Vocabulary Guidance:\n{guidance.strip()}"
     return (
         f"{instructions}\n\n"
         f"Context Documentation:\n{context}\n\n"

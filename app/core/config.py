@@ -105,6 +105,18 @@ class Settings:
     default_result_limit: int = 1000
     agent_max_retries: int = 3
     cache: CacheSettings | None = None
+    # Empty-result stability controls
+    empty_result_stability_enabled: bool = True
+    empty_result_min_attempts: int = 2
+    sql_semantic_compare_via_llm: bool = False
+    # Logging
+    log_sql_text: bool = False
+    # Vocabulary guidance for the SQL prompt
+    vocabulary_guidance_enabled: bool = True
+    vocabulary_guidance_extra: str | None = None
+    # Retrieval preferences
+    retrieval_top_k: int = 4
+    retrieval_bias_schema_docs: bool = True
 
 
 @lru_cache(maxsize=1)
@@ -161,4 +173,12 @@ def get_settings() -> Settings:
         default_result_limit=int(_get_env("DEFAULT_RESULT_LIMIT", "1000")),
         agent_max_retries=int(_get_env("AGENT_MAX_RETRIES", "3")),
         cache=cache,
+        empty_result_stability_enabled=_get_env("EMPTY_RESULT_STABILITY_ENABLED", "true").lower() in {"true", "1", "yes"},
+        empty_result_min_attempts=int(_get_env("EMPTY_RESULT_MIN_ATTEMPTS", "2")),
+        sql_semantic_compare_via_llm=_get_env("SQL_SEMANTIC_COMPARE_VIA_LLM", "false").lower() in {"true", "1", "yes"},
+        log_sql_text=_get_env("LOG_SQL_TEXT", "false").lower() in {"true", "1", "yes"},
+        vocabulary_guidance_enabled=_get_env("VOCAB_GUIDANCE_ENABLED", "true").lower() in {"true", "1", "yes"},
+        vocabulary_guidance_extra=_get_env("VOCAB_GUIDANCE_EXTRA"),
+        retrieval_top_k=int(_get_env("RETRIEVAL_TOP_K", "4")),
+        retrieval_bias_schema_docs=_get_env("RETRIEVAL_BIAS_SCHEMA_DOCS", "true").lower() in {"true", "1", "yes"},
     )

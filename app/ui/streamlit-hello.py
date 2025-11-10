@@ -269,6 +269,11 @@ def _render_audit_tab(session_id: str) -> None:
         metrics_df = pd.DataFrame(
             [{"Metric": name.replace('_', ' ').title(), "Value": value if value is not None else "—"} for name, value in metrics.items() if name != "intent"]
         )
+        # Ensure a consistent dtype to avoid Arrow conversion errors when rendering
+        try:
+            metrics_df["Value"] = metrics_df["Value"].astype(str)
+        except Exception:
+            pass
         st.table(metrics_df)
 
     conversation = st.session_state.get("conversation", [])
@@ -296,7 +301,11 @@ def _render_sql_response(payload: Dict[str, Any]) -> None:
 
     df = pd.DataFrame(payload.get("rows", []))
     if df.empty:
-        st.info("The query returned no rows.")
+        if payload.get("no_results_stable"):
+            attempts = payload.get("stability_attempts") or 2
+            st.info(f"No matching records found (confirmed after {attempts} equivalent attempts).")
+        else:
+            st.info("The query returned no rows.")
     else:
         _render_table_and_tools(df)
 
